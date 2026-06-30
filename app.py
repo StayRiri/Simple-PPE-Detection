@@ -22,7 +22,11 @@ if not os.path.exists(LOG_FILE):
 
 # --- SIDEBAR PENGATURAN ---
 st.sidebar.header("Pengaturan Sumber Video")
-file_video = st.sidebar.file_uploader("Upload video (.mp4, .avi, .mov)", type=['mp4', 'avi', 'mov'])
+sumber_opsi = st.sidebar.radio("Pilih Sumber Input:", ["Webcam", "Upload Video"])
+
+file_video = None
+if sumber_opsi == "Upload Video":
+    file_video = st.sidebar.file_uploader("Upload video (.mp4, .avi, .mov)", type=['mp4', 'avi', 'mov'])
 
 # --- TATA LETAK UTAMA ---
 col1, col2 = st.columns([6, 4])
@@ -48,24 +52,22 @@ table_placeholder.dataframe(load_logs(), use_container_width=True, hide_index=Tr
 # --- LOGIKA UTAMA DETEKSI ---
 if start_button:
     try:
-        if file_video is None:
+        if sumber_opsi == "Upload Video" and file_video is None:
             st.error("Silakan upload file video terlebih dahulu di sidebar kiri!")
         else:
             model = YOLO(MODEL_PATH)
             
-            tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-            tfile.write(file_video.read())
-            tfile.close() 
-            
-            cap = cv2.VideoCapture(tfile.name)
+            if sumber_opsi == "Webcam":
+                cap = cv2.VideoCapture(0)
+            else:
+                tfile = tempfile.NamedTemporaryFile(delete=False)
+                tfile.write(file_video.read())
+                cap = cv2.VideoCapture(tfile.name)
             
             # MEMORI CERDAS & MAPPING ID
             pelanggar_tercatat = set() 
-            pemetaan_id = {}         
-            id_urut_selanjutnya = 1  
-            
-            # PERBAIKAN: Variabel penghitung frame untuk UI
-            frame_count = 0 
+            pemetaan_id = {}         # Buku catatan untuk menerjemahkan ID YOLO ke ID berurutan
+            id_urut_selanjutnya = 1  # Kita mulai berhitung dari 1
             
             while cap.isOpened() and not stop_button:
                 ret, frame = cap.read()
@@ -74,8 +76,9 @@ if start_button:
                     break
                     
                 frame = cv2.resize(frame, (640, 480))
-                frame_count += 1 
                     
+                # KUNCI UTAMA: Menggunakan fitur .track() bukan .predict()
+                # persist=True artinya AI akan mengingat objek dari frame sebelumnya
                 results = model.track(frame, persist=True, conf=0.5, verbose=False)
                 
                 boxes_person = []
@@ -93,15 +96,20 @@ if start_button:
                         cls_id = int(box.cls[0])
                         class_name = model.names[cls_id]
                         
+                        # Ambil ID unik jika AI berhasil melacak objek tersebut
                         track_id = int(box.id[0]) if box.id is not None else -1
+
                         warna = (0, 255, 0) if class_name != 'Person' else (255, 0, 0)
                         
+                        # --- MODIFIKASI MAPPING ID BERURUTAN ---
                         id_final = track_id
                         if class_name == 'Person' and track_id != -1:
+                            # Jika ID dari YOLO belum ada di buku kita, catat dan beri nomor urut cantik
                             if track_id not in pemetaan_id:
                                 pemetaan_id[track_id] = id_urut_selanjutnya
                                 id_urut_selanjutnya += 1
                             
+                            # Gunakan nomor urut cantik dari buku kita
                             id_final = pemetaan_id[track_id]
                             label_teks = f"Pekerja ID:{id_final}"
                         else:
@@ -110,6 +118,7 @@ if start_button:
                         cv2.rectangle(frame, (x1, y1), (x2, y2), warna, 2)
                         cv2.putText(frame, label_teks, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, warna, 2)
 
+                        # Memisahkan hasil deteksi (PENTING: gunakan id_final di sini)
                         if class_name == 'Person': boxes_person.append((x1, y1, x2, y2, id_final))
                         elif class_name == 'Helmet': boxes_helmet.append((x1, y1, x2, y2))
                         elif class_name == 'Vest': boxes_vest.append((x1, y1, x2, y2))
@@ -118,7 +127,9 @@ if start_button:
 
                 log_baru = []
 
+                # --- VALIDASI PELANGGARAN ANTI-SPAM ---
                 for px1, py1, px2, py2, track_id in boxes_person:
+                    # Jika pekerja belum mendapat ID yang stabil dari AI, lewati dulu
                     if track_id == -1:
                         continue
                         
@@ -127,10 +138,12 @@ if start_button:
                     pakai_sarung = any(gx1 >= px1 - 50 and gx2 <= px2 + 50 and gy1 >= py1 - 50 and gy2 <= py2 for gx1, gy1, gx2, gy2 in boxes_gloves)
                     pakai_sepatu = any(bx1 >= px1 - 50 and bx2 <= px2 + 50 and by1 >= py1 - 50 and by2 <= py2 for bx1, by1, bx2, by2 in boxes_boots)
 
+                    # Fungsi kecil untuk mencatat jika belum ada di memori
                     def catat_pelanggaran(kondisi_pakai, nama_pelanggaran):
                         if not kondisi_pakai:
                             kunci_memori = f"ID_{track_id}_{nama_pelanggaran}"
                             
+                            # Jika kombinasi ID & Pelanggaran ini belum pernah dicatat
                             if kunci_memori not in pelanggar_tercatat:
                                 log_baru.append({
                                     "Waktu": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
@@ -138,6 +151,7 @@ if start_button:
                                     "Jenis Pelanggaran": nama_pelanggaran, 
                                     "Lokasi": "Zona 1"
                                 })
+                                # Tambahkan ke memori 
                                 pelanggar_tercatat.add(kunci_memori)
 
                     catat_pelanggaran(pakai_helm, "Tanpa Helm")
@@ -145,20 +159,19 @@ if start_button:
                     catat_pelanggaran(pakai_sarung, "Tanpa Sarung Tangan")
                     catat_pelanggaran(pakai_sepatu, "Tanpa Sepatu Boots")
 
+                # Jika ada pelanggaran baru dari ID yang baru, simpan & update layar
                 if log_baru:
                     df_baru = pd.DataFrame(log_baru)
                     df_baru.to_csv(LOG_FILE, mode='a', header=not os.path.exists(LOG_FILE), index=False)
                     table_placeholder.dataframe(load_logs(), use_container_width=True, hide_index=True)
 
-                # PERBAIKAN: Hanya mengirim gambar ke layar web setiap 3 frame sekali (Meringankan beban jaringan)
-                if frame_count % 3 == 0:
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    frame_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
-                    
-                # Time sleep dihapus total agar backend berlari maksimal tanpa hambatan
+                # Tampilkan frame video ke web
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frame_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
+                
+                time.sleep(0.01)
 
             cap.release()
-            os.remove(tfile.name)
     
     except Exception as e:
         st.error(f"Terjadi kesalahan: {e}")
