@@ -2,3 +2,4 @@ streamlit
 pandas
 ultralytics
 opencv-python-headless
+lapx
