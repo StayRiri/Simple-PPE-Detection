@@ -22,11 +22,8 @@ if not os.path.exists(LOG_FILE):
 
 # --- SIDEBAR PENGATURAN ---
 st.sidebar.header("Pengaturan Sumber Video")
-sumber_opsi = st.sidebar.radio("Pilih Sumber Input:", ["Webcam", "Upload Video"])
-
-file_video = None
-if sumber_opsi == "Upload Video":
-    file_video = st.sidebar.file_uploader("Upload video (.mp4, .avi, .mov)", type=['mp4', 'avi', 'mov'])
+# Fitur Webcam dihapus agar tidak menyebabkan crash pada Streamlit Cloud
+file_video = st.sidebar.file_uploader("Upload video (.mp4, .avi, .mov)", type=['mp4', 'avi', 'mov'])
 
 # --- TATA LETAK UTAMA ---
 col1, col2 = st.columns([6, 4])
@@ -52,18 +49,17 @@ table_placeholder.dataframe(load_logs(), use_container_width=True, hide_index=Tr
 # --- LOGIKA UTAMA DETEKSI ---
 if start_button:
     try:
-        if sumber_opsi == "Upload Video" and file_video is None:
+        if file_video is None:
             st.error("Silakan upload file video terlebih dahulu di sidebar kiri!")
         else:
             model = YOLO(MODEL_PATH)
             
-            if sumber_opsi == "Webcam":
-                cap = cv2.VideoCapture(0)
-            else:
-                tfile = tempfile.NamedTemporaryFile(delete=False)
-                tfile.write(file_video.read())
-                cap = cv2.VideoCapture(tfile.name)
-                tfile.close()
+            # PERBAIKAN: Menambahkan suffix .mp4 dan tfile.close() agar video terbaca penuh
+            tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+            tfile.write(file_video.read())
+            tfile.close() 
+            
+            cap = cv2.VideoCapture(tfile.name)
             
             # MEMORI CERDAS & MAPPING ID
             pelanggar_tercatat = set() 
@@ -173,6 +169,8 @@ if start_button:
                 time.sleep(0.01)
 
             cap.release()
+            # PERBAIKAN: Menghapus video sementara agar tidak memenuhi kapasitas server
+            os.remove(tfile.name)
     
     except Exception as e:
         st.error(f"Terjadi kesalahan: {e}")
