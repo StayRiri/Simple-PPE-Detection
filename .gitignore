@@ -1,0 +1,9 @@
+# Mengabaikan file log CSV agar database di cloud mulai dari kosong
+log_pelanggaran.csv
+
+# Mengabaikan folder temporary atau cache sistem
+__pycache__/
+.streamlit/
+runs/
+*.mp4
+*.avi
