@@ -63,6 +63,7 @@ if start_button:
                 tfile = tempfile.NamedTemporaryFile(delete=False)
                 tfile.write(file_video.read())
                 cap = cv2.VideoCapture(tfile.name)
+                tfile.close()
             
             # MEMORI CERDAS & MAPPING ID
             pelanggar_tercatat = set() 
