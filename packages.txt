@@ -1,2 +1,2 @@
-liglib1
-liglib2.0-0
+libgl1
+libglib2.0-0
