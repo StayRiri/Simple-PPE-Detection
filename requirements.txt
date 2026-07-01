@@ -3,5 +3,3 @@ pandas
 ultralytics
 opencv-python-headless
 lapx
-streamlit-webrtc
-av
